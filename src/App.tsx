@@ -1,14 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-
-type MarketAsset = {
-  symbol: string
-  name: string
-  price: number
-  change: number
-  volume: number
-  marketCap?: string
-  color: string
-}
+import AuthScreen from './components/AuthScreen'
+import SupportChat from './components/SupportChat'
+import WalletOverview from './components/WalletOverview'
+import type { DemoUser, MarketAsset } from './types'
 
 type NavItem = 'Dashboard' | 'Mercado' | 'Radar' | 'Notícias' | 'Comunidade' | 'Watchlist' | 'Análises' | 'Alertas' | 'Minha Carteira'
 
@@ -373,7 +367,7 @@ function OnboardingDialog({ onDone, onNavigate }: { onDone: () => void; onNaviga
   return <div className="dialog-backdrop onboarding-backdrop" role="presentation"><section className="onboarding-dialog" role="dialog" aria-modal="true" aria-label="Boas-vindas ao CryptoLens"><span className="ai-orb">✦</span><div className="onboarding-progress"><i style={{ width: `${((step + 1) / steps.length) * 100}%` }}/></div><span>{current.tag}</span><h2>{current.title}</h2><p>{current.text}</p><div><button className="soft-btn" onClick={onDone}>Pular introdução</button><button className="primary-btn" onClick={() => { if (step < steps.length - 1) setStep(step + 1); else { onNavigate('Mercado'); onDone() } }}>{step < steps.length - 1 ? 'Continuar' : 'Explorar o mercado'} <Icon name="arrow" size={16}/></button></div></section></div>
 }
 
-function App() {
+function AuthenticatedApp({ user, onLogout }: { user: DemoUser; onLogout: () => void }) {
   const [activeNav, setActiveNav] = useState<NavItem>(() => pageFromHash())
   const [assets, setAssets] = useState<MarketAsset[]>(fallbackAssets)
   const [dataState, setDataState] = useState<'loading' | 'live' | 'unavailable' | 'offline'>(() => navigator.onLine ? 'loading' : 'offline')
@@ -621,15 +615,16 @@ function App() {
           <div className={`market-online ${dataState !== 'live' ? 'muted' : ''}`} aria-live="polite"><i/>{dataState === 'live' ? streamState === 'live' ? 'Preços em tempo real' : 'Mercado online' : dataState === 'loading' ? 'Atualizando mercado' : dataState === 'offline' ? 'Sem conexão' : 'Mercado indisponível'}</div>
           <div className="search-wrap"><Icon name="search" size={17}/><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar ativo" aria-label="Buscar ativo"/>{query && <div className="search-results">{matches.length ? matches.map((asset) => <button key={asset.symbol} onClick={() => { setQuery(''); openAsset(asset) }}><AssetMark symbol={asset.symbol} color={asset.color} size="sm"/>{asset.name}<span>{asset.symbol}</span></button>) : <p>Nenhum ativo encontrado</p>}</div>}</div>
           <button className="round-action" aria-label="Configurações" onClick={() => showSoon('Configurações')}><Icon name="settings" size={18}/></button>
-          <button className="profile" onClick={() => showSoon('Perfil')}><span>AM</span><i/></button>
+          <button className="profile" onClick={onLogout} aria-label={`Sair da conta de ${user.name}`} title="Encerrar sessão"><span>{user.name.split(/\s+/).map((part) => part[0]).join('').slice(0, 2).toUpperCase()}</span><i/></button>
         </div>
       </header>
 
       {activeNav === 'Dashboard' ? <>
+      <WalletOverview assets={assets} onOpenAsset={openAsset}/>
       <section className="hero-section">
         <div className="hero-copy">
           <div className="eyebrow"><span/> SIGNAL-FIRST RESEARCH</div>
-          <h1>Sua inteligência pessoal<br/>para o <em>mercado cripto.</em></h1>
+          <h2>Sua inteligência pessoal<br/>para o <em>mercado cripto.</em></h2>
           <p>Monitore o mercado, descubra projetos promissores e tome decisões baseadas em dados — sem ruído, sem hype.</p>
           <div className="hero-actions"><button className="primary-btn" onClick={() => setActiveNav('Mercado')}>Explorar mercado <Icon name="arrow" size={17}/></button><button className="quiet-btn" onClick={() => setActiveNav('Radar')}><span className="play-icon">▶</span> Ver oportunidades</button></div>
           <div className="data-source"><span className={dataState === 'live' ? 'live-dot' : 'muted-dot'}/>{dataState === 'live' ? 'Dados de mercado via Binance · Atualizados agora' : dataState === 'loading' ? 'Conectando aos dados de mercado...' : 'Dados de mercado temporariamente indisponíveis'}</div>
@@ -676,7 +671,28 @@ function App() {
     {commandOpen && <CommandPalette assets={assets} onOpenAsset={openAsset} onNavigate={setActiveNav} onClose={() => setCommandOpen(false)}/>}
     {onboardingOpen && <OnboardingDialog onDone={finishOnboarding} onNavigate={setActiveNav}/>}
     {notice && <div className="toast"><span>✓</span>{notice}</div>}
+    <SupportChat/>
   </div>
+}
+
+function App() {
+  const readSession = () => {
+    try { return JSON.parse(sessionStorage.getItem('cryptolens-session') || localStorage.getItem('cryptolens-session') || 'null') as DemoUser | null } catch { return null }
+  }
+  const [user, setUser] = useState<DemoUser | null>(readSession)
+  const authenticate = (nextUser: DemoUser, persist: boolean) => {
+    sessionStorage.removeItem('cryptolens-session')
+    localStorage.removeItem('cryptolens-session')
+    const storage = persist ? localStorage : sessionStorage
+    storage.setItem('cryptolens-session', JSON.stringify(nextUser))
+    setUser(nextUser)
+  }
+  const logout = () => {
+    sessionStorage.removeItem('cryptolens-session')
+    localStorage.removeItem('cryptolens-session')
+    setUser(null)
+  }
+  return user ? <AuthenticatedApp user={user} onLogout={logout}/> : <AuthScreen onAuthenticated={authenticate}/>
 }
 
 export default App

@@ -33,6 +33,23 @@ pnpm build
   licenciadas. Nenhuma chave, token ou credencial deve ser adicionada ao site
   estático.
 
+## Wallet e autenticação demonstrativas
+
+- O cadastro local usa PBKDF2 via Web Crypto. A senha não é salva em texto;
+  ainda assim, esse fluxo é apenas uma simulação e não substitui autenticação
+  de produção, recuperação de conta ou MFA.
+- A sessão pode usar `sessionStorage` ou `localStorage`, conforme a opção
+  escolhida no login.
+- Os saldos de BTC, ETH e SOL são valores demonstrativos claramente marcados.
+  As cotações e o gráfico usam dados públicos; nenhum saldo é consultado em
+  blockchain ou corretora.
+- Enviar, receber e swap são simulações locais. O endereço mostrado em
+  "Receber" é propositalmente inválido e nenhum formulário transmite ou
+  movimenta fundos.
+- O chat de suporte usa respostas locais. Para conectar um modelo generativo,
+  use um backend que proteja a chave do provedor e aplique autenticação,
+  limitação de uso e auditoria.
+
 ## Publicação
 
 O GitHub é a fonte de verdade do projeto. Atualizações enviadas para a branch
