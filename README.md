@@ -17,8 +17,10 @@ pnpm build
 
 ## Dados e privacidade
 
-- Preços, volume e histórico usam endpoints públicos da Binance Spot. O painel
-  atualiza os preços no máximo uma vez por minuto enquanto a aba está visível.
+- Preços, volume e histórico usam endpoints públicos da Binance Spot. Depois
+  da carga inicial, os ativos monitorados recebem atualizações em tempo real
+  pelo stream público da Binance enquanto a aba está visível. A consulta REST
+  de recuperação ocorre no máximo uma vez por minuto.
 - Indicadores globais usam CoinGecko e Alternative.me; tendências usam
   CoinGecko. Se uma fonte estiver indisponível ou o navegador estiver offline,
   o site mostra o estado correspondente e não substitui dados ausentes por
