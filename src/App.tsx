@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 
 type MarketAsset = {
   symbol: string
@@ -150,6 +150,11 @@ function formatCompact(value: number) {
   return new Intl.NumberFormat('pt-BR', { notation: 'compact', maximumFractionDigits: 1 }).format(value)
 }
 
+function formatPercent(value: number, available: boolean) {
+  if (!available || !Number.isFinite(value)) return '—'
+  return `${value >= 0 ? '+' : ''}${value.toFixed(2)}%`
+}
+
 function AssetMark({ symbol, color, size = 'md' }: { symbol: string; color: string; size?: 'sm' | 'md' | 'lg' }) {
   return <span className={`asset-mark ${size}`} style={{ '--coin-color': color } as React.CSSProperties}>{symbol === 'BTC' ? '₿' : symbol === 'ETH' ? '◆' : symbol.slice(0, 1)}</span>
 }
@@ -195,9 +200,9 @@ function WorkspaceHeading({ eyebrow, title, description, action }: { eyebrow: st
   return <div className="workspace-heading"><div><div className="eyebrow compact"><span/>{eyebrow}</div><h1>{title}</h1><p>{description}</p></div>{action}</div>
 }
 
-function MarketWorkspace({ assets, watchlist, onToggle, onOpen }: { assets: MarketAsset[]; watchlist: string[]; onToggle: (symbol: string) => void; onOpen: (asset: MarketAsset) => void }) {
-  const openWithKeyboard = (event: React.KeyboardEvent<HTMLElement>, asset: MarketAsset) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onOpen(asset) } }
-  return <section className="workspace-page"><WorkspaceHeading eyebrow="DADOS SPOT · BINANCE" title="Mercado" description="Preços, variações e volume dos ativos que você acompanha." action={<span className="live-source"><i/> Atualização pública</span>}/><div className="workspace-stat-grid"><div><span>ATIVOS MONITORADOS</span><b>{assets.filter((asset) => asset.price > 0).length || '—'}</b><small>pares USDT</small></div><div><span>VOLUME COMBINADO 24H</span><b>{formatCompact(assets.reduce((total, asset) => total + asset.volume, 0))}</b><small>ativos exibidos</small></div><div><span>MAIOR ALTA</span><b className="up-text">{assets.length ? [...assets].sort((a, b) => b.change - a.change)[0].symbol : '—'}</b><small>entre os ativos monitorados</small></div><div><span>MAIOR BAIXA</span><b className="down-text">{assets.length ? [...assets].sort((a, b) => a.change - b.change)[0].symbol : '—'}</b><small>entre os ativos monitorados</small></div></div><div className="data-table-panel"><div className="data-table-head"><span>ATIVO</span><span>PREÇO</span><span>24H</span><span>VOLUME 24H</span><span>TENDÊNCIA</span><span/></div>{assets.map((asset) => <article className="data-table-row clickable-row" key={asset.symbol} role="button" tabIndex={0} onClick={() => onOpen(asset)} onKeyDown={(event) => openWithKeyboard(event, asset)}><span className="table-asset"><AssetMark symbol={asset.symbol} color={asset.color}/><i><b>{asset.name}</b><small>{asset.symbol}/USDT</small></i></span><strong>{formatMoney(asset.price)}</strong><em className={asset.change >= 0 ? 'up-text' : 'down-text'}>{asset.change >= 0 ? '+' : ''}{asset.change.toFixed(2)}%</em><span>{formatCompact(asset.volume)}</span><Sparkline positive={asset.change >= 0} small/><span className="table-actions"><button className={watchlist.includes(asset.symbol) ? 'watch-toggle saved' : 'watch-toggle'} onClick={(event) => { event.stopPropagation(); onToggle(asset.symbol) }} aria-label={`Alternar ${asset.name} na watchlist`}><Icon name="bookmark" size={16}/></button><Icon name="chevron" size={16}/></span></article>)}</div></section>
+function MarketWorkspace({ assets, watchlist, onToggle, onOpen, dataState, onRetry }: { assets: MarketAsset[]; watchlist: string[]; onToggle: (symbol: string) => void; onOpen: (asset: MarketAsset) => void; dataState: 'loading' | 'live' | 'unavailable' | 'offline'; onRetry: () => void }) {
+  const hasLiveData = dataState === 'live'
+  return <section className="workspace-page"><WorkspaceHeading eyebrow="DADOS SPOT · BINANCE" title="Mercado" description="Preços, variações e volume dos ativos que você acompanha." action={<span className={hasLiveData ? 'live-source' : 'source-status muted'}><i/> {hasLiveData ? 'Stream público ao vivo' : dataState === 'loading' ? 'Conectando…' : 'Fonte indisponível'}</span>}/>{!hasLiveData && <div className="source-message" role="status"><div><b>{dataState === 'loading' ? 'Conectando à fonte pública…' : dataState === 'offline' ? 'Sem conexão com a internet.' : 'Os dados de mercado não estão disponíveis agora.'}</b><span>{dataState === 'loading' ? 'Os valores aparecerão assim que a primeira atualização for confirmada.' : 'Não exibimos valores estimados. Verifique sua conexão ou tente novamente.'}</span></div>{dataState !== 'loading' && <button className="soft-btn" onClick={onRetry}>Tentar novamente</button>}</div>}<div className="workspace-stat-grid"><div><span>ATIVOS MONITORADOS</span><b>{hasLiveData ? assets.filter((asset) => asset.price > 0).length : '—'}</b><small>pares USDT</small></div><div><span>VOLUME COMBINADO 24H</span><b>{hasLiveData ? formatCompact(assets.reduce((total, asset) => total + asset.volume, 0)) : '—'}</b><small>ativos exibidos</small></div><div><span>MAIOR ALTA</span><b className="up-text">{hasLiveData && assets.length ? [...assets].sort((a, b) => b.change - a.change)[0].symbol : '—'}</b><small>entre os ativos monitorados</small></div><div><span>MAIOR BAIXA</span><b className="down-text">{hasLiveData && assets.length ? [...assets].sort((a, b) => a.change - b.change)[0].symbol : '—'}</b><small>entre os ativos monitorados</small></div></div><div className="data-table-panel"><div className="data-table-head"><span>ATIVO</span><span>PREÇO</span><span>24H</span><span>VOLUME 24H</span><span>TENDÊNCIA</span><span/></div>{assets.map((asset) => <article className="data-table-row" key={asset.symbol}><span className="table-asset"><AssetMark symbol={asset.symbol} color={asset.color}/><i><b>{asset.name}</b><small>{asset.symbol}/USDT</small></i></span><strong>{formatMoney(asset.price)}</strong><em className={asset.change >= 0 ? 'up-text' : 'down-text'}>{formatPercent(asset.change, hasLiveData)}</em><span>{formatCompact(asset.volume)}</span><Sparkline positive={asset.change >= 0} small/><span className="table-actions"><button className={watchlist.includes(asset.symbol) ? 'watch-toggle saved' : 'watch-toggle'} onClick={() => onToggle(asset.symbol)} aria-label={`Alternar ${asset.name} na watchlist`}><Icon name="bookmark" size={16}/></button><button className="row-detail" onClick={() => onOpen(asset)} aria-label={`Abrir detalhes de ${asset.name}`}><Icon name="chevron" size={16}/></button></span></article>)}</div></section>
 }
 
 function RadarWorkspace({ assets, onOpen }: { assets: MarketAsset[]; onOpen: (asset: MarketAsset) => void }) {
@@ -227,7 +232,7 @@ function RadarWorkspace({ assets, onOpen }: { assets: MarketAsset[]; onOpen: (as
 function NewsWorkspace() {
   const [category, setCategory] = useState('Todas')
   const categories = ['Todas', 'Bitcoin', 'Ethereum', 'Altcoins', 'DeFi', 'IA + Cripto', 'Regulação', 'ETFs', 'Tecnologia']
-  return <section className="workspace-page"><WorkspaceHeading eyebrow="FONTES VERIFICÁVEIS" title="Crypto News" description="Um feed de notícias só é exibido quando a fonte, horário e link original puderem ser confirmados."/><div className="news-filters">{categories.map((item) => <button key={item} className={category === item ? 'selected' : ''} onClick={() => setCategory(item)}>{item}</button>)}</div><div className="news-empty-large"><span className="news-empty-icon"><Icon name="news" size={28}/></span><div><h2>Feed de {category === 'Todas' ? 'notícias' : category} aguardando uma fonte conectada</h2><p>Conecte uma API de notícias ou RSS no backend para habilitar título, fonte, horário, imagem, impacto e link original. O CryptoLens não preenche este espaço com manchetes fictícias.</p><button className="primary-btn">Conectar fonte de notícias <Icon name="arrow" size={16}/></button></div></div></section>
+  return <section className="workspace-page"><WorkspaceHeading eyebrow="FONTES VERIFICÁVEIS" title="Crypto News" description="Um feed de notícias só é exibido quando a fonte, horário e link original puderem ser confirmados."/><div className="news-filters" aria-label="Filtrar notícias por assunto">{categories.map((item) => <button key={item} className={category === item ? 'selected' : ''} aria-pressed={category === item} onClick={() => setCategory(item)}>{item}</button>)}</div><div className="news-empty-large"><span className="news-empty-icon"><Icon name="news" size={28}/></span><div><h2>Feed de {category === 'Todas' ? 'notícias' : category} aguardando uma fonte conectada</h2><p>Conecte uma API de notícias ou RSS no backend para habilitar título, fonte, horário, imagem, impacto e link original. O CryptoLens não preenche este espaço com manchetes fictícias.</p><span className="integration-note">Integração de notícias requer backend seguro e uma fonte com licença apropriada.</span></div></div></section>
 }
 
 function CommunityWorkspace({ posts, onCreate, onLike, onReply }: { posts: CommunityPost[]; onCreate: (topic: string, message: string) => void; onLike: (id: string) => void; onReply: (id: string, message: string) => void }) {
@@ -241,8 +246,7 @@ function CommunityWorkspace({ posts, onCreate, onLike, onReply }: { posts: Commu
 
 function WatchlistWorkspace({ assets, watchlist, onToggle, onOpen }: { assets: MarketAsset[]; watchlist: string[]; onToggle: (symbol: string) => void; onOpen: (asset: MarketAsset) => void }) {
   const selected = assets.filter((asset) => watchlist.includes(asset.symbol))
-  const openWithKeyboard = (event: React.KeyboardEvent<HTMLElement>, asset: MarketAsset) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onOpen(asset) } }
-  return <section className="workspace-page"><WorkspaceHeading eyebrow="SEUS ATIVOS" title="Watchlist" description="Acompanhe os ativos que você quer pesquisar sem misturar isso com uma decisão de compra." action={<span className="workspace-count">{watchlist.length} ativos</span>}/><div className="watchlist-layout"><div className="data-table-panel">{selected.length ? <><div className="data-table-head"><span>ATIVO</span><span>PREÇO</span><span>24H</span><span>VOLUME</span><span>TENDÊNCIA</span><span/></div>{selected.map((asset) => <article className="data-table-row clickable-row" key={asset.symbol} role="button" tabIndex={0} onClick={() => onOpen(asset)} onKeyDown={(event) => openWithKeyboard(event, asset)}><span className="table-asset"><AssetMark symbol={asset.symbol} color={asset.color}/><i><b>{asset.name}</b><small>{asset.symbol}/USDT</small></i></span><strong>{formatMoney(asset.price)}</strong><em className={asset.change >= 0 ? 'up-text' : 'down-text'}>{asset.change >= 0 ? '+' : ''}{asset.change.toFixed(2)}%</em><span>{formatCompact(asset.volume)}</span><Sparkline positive={asset.change >= 0} small/><span className="table-actions"><button className="watch-toggle saved" onClick={(event) => { event.stopPropagation(); onToggle(asset.symbol) }} aria-label={`Remover ${asset.name} da watchlist`}><Icon name="bookmark" size={16}/></button></span></article>)}</> : <div className="empty-state"><Icon name="bookmark" size={30}/><h2>Sua watchlist está vazia</h2><p>Escolha ativos abaixo para começar a acompanhar.</p></div>}</div><aside className="add-assets-panel"><span>ADICIONAR ATIVOS</span><h2>Explore o mercado</h2><p>Os ativos ficam salvos neste navegador.</p>{assets.map((asset) => <button key={asset.symbol} onClick={() => onToggle(asset.symbol)}><AssetMark symbol={asset.symbol} color={asset.color} size="sm"/><b>{asset.name}</b><span>{watchlist.includes(asset.symbol) ? 'Adicionado' : 'Adicionar'}</span></button>)}</aside></div></section>
+  return <section className="workspace-page"><WorkspaceHeading eyebrow="SEUS ATIVOS" title="Watchlist" description="Acompanhe os ativos que você quer pesquisar sem misturar isso com uma decisão de compra." action={<span className="workspace-count">{watchlist.length} ativos</span>}/><div className="watchlist-layout"><div className="data-table-panel">{selected.length ? <><div className="data-table-head"><span>ATIVO</span><span>PREÇO</span><span>24H</span><span>VOLUME</span><span>TENDÊNCIA</span><span/></div>{selected.map((asset) => <article className="data-table-row" key={asset.symbol}><span className="table-asset"><AssetMark symbol={asset.symbol} color={asset.color}/><i><b>{asset.name}</b><small>{asset.symbol}/USDT</small></i></span><strong>{formatMoney(asset.price)}</strong><em className={asset.change >= 0 ? 'up-text' : 'down-text'}>{asset.price ? `${asset.change >= 0 ? '+' : ''}${asset.change.toFixed(2)}%` : '—'}</em><span>{formatCompact(asset.volume)}</span><Sparkline positive={asset.change >= 0} small/><span className="table-actions"><button className="watch-toggle saved" onClick={() => onToggle(asset.symbol)} aria-label={`Remover ${asset.name} da watchlist`}><Icon name="bookmark" size={16}/></button><button className="row-detail" onClick={() => onOpen(asset)} aria-label={`Abrir detalhes de ${asset.name}`}><Icon name="chevron" size={16}/></button></span></article>)}</> : <div className="empty-state"><Icon name="bookmark" size={30}/><h2>Sua watchlist está vazia</h2><p>Escolha ativos abaixo para começar a acompanhar.</p></div>}</div><aside className="add-assets-panel"><span>ADICIONAR ATIVOS</span><h2>Explore o mercado</h2><p>Os ativos ficam salvos neste navegador.</p>{assets.map((asset) => <button key={asset.symbol} onClick={() => onToggle(asset.symbol)}><AssetMark symbol={asset.symbol} color={asset.color} size="sm"/><b>{asset.name}</b><span>{watchlist.includes(asset.symbol) ? 'Adicionado' : 'Adicionar'}</span></button>)}</aside></div></section>
 }
 
 function IntelligenceWorkspace({ assets, fearGreed, marketOverview, onOpenAI }: { assets: MarketAsset[]; fearGreed: { value: number; label: string } | null; marketOverview: GlobalMarketMetrics | null; onOpenAI: () => void }) {
@@ -282,8 +286,8 @@ function PortfolioDistribution({ assets, positions }: { assets: MarketAsset[]; p
   return <section className="portfolio-insights-section"><div className="portfolio-insights-heading"><div><span>VISUALIZAÇÃO DE EXPOSIÇÃO</span><h2>Como sua carteira está distribuída</h2><p>Estimativa com base no preço spot atual e nas posições informadas por você.</p></div><small>Sem conexão com exchange</small></div>{exposures.length ? <div className="portfolio-distribution"><div className="allocation-donut" style={{ background: `conic-gradient(${spectrum})` }}><div><b>{formatMoney(total)}</b><small>valor estimado</small></div></div><div className="allocation-list">{exposures.map((position) => { const share = total ? position.current / total * 100 : 0; return <article key={position.id}><div><span style={{ background: position.asset?.color ?? '#82d7b5' }}/><b>{position.symbol}</b><small>{share.toFixed(1)}% · {formatMoney(position.current)}</small></div><i><em style={{ width: `${share}%`, background: position.asset?.color ?? '#82d7b5' }}/></i></article> })}</div><aside><span>LEITURA RÁPIDA</span><h3>{exposures.length === 1 ? 'Uma única posição concentra toda a exposição.' : `${exposures[0].symbol} é sua maior exposição registrada.`}</h3><p>Essa leitura não considera ativos mantidos fora do painel, taxas, impostos ou rendimentos.</p></aside></div> : <div className="portfolio-empty-insight"><Icon name="wallet" size={24}/><p>Adicione uma posição para ver a distribuição e a exposição por ativo.</p></div>}</section>
 }
 
-function WorkspacePage({ page, assets, watchlist, onToggle, onOpenAsset, fearGreed, marketOverview, onOpenAI, alerts, onAddAlert, onRemoveAlert, positions, onAddPosition, onRemovePosition, communityPosts, onCreatePost, onLikePost, onReplyPost }: { page: NavItem; assets: MarketAsset[]; watchlist: string[]; onToggle: (symbol: string) => void; onOpenAsset: (asset: MarketAsset) => void; fearGreed: { value: number; label: string } | null; marketOverview: GlobalMarketMetrics | null; onOpenAI: () => void; alerts: AlertRule[]; onAddAlert: (rule: Omit<AlertRule, 'id'>) => void; onRemoveAlert: (id: string) => void; positions: PortfolioPosition[]; onAddPosition: (position: Omit<PortfolioPosition, 'id'>) => void; onRemovePosition: (id: string) => void; communityPosts: CommunityPost[]; onCreatePost: (topic: string, message: string) => void; onLikePost: (id: string) => void; onReplyPost: (id: string, message: string) => void }) {
-  if (page === 'Mercado') return <MarketWorkspace assets={assets} watchlist={watchlist} onToggle={onToggle} onOpen={onOpenAsset}/>
+function WorkspacePage({ page, assets, watchlist, onToggle, onOpenAsset, dataState, onRetryMarket, fearGreed, marketOverview, onOpenAI, alerts, onAddAlert, onRemoveAlert, positions, onAddPosition, onRemovePosition, communityPosts, onCreatePost, onLikePost, onReplyPost }: { page: NavItem; assets: MarketAsset[]; watchlist: string[]; onToggle: (symbol: string) => void; onOpenAsset: (asset: MarketAsset) => void; dataState: 'loading' | 'live' | 'unavailable' | 'offline'; onRetryMarket: () => void; fearGreed: { value: number; label: string } | null; marketOverview: GlobalMarketMetrics | null; onOpenAI: () => void; alerts: AlertRule[]; onAddAlert: (rule: Omit<AlertRule, 'id'>) => void; onRemoveAlert: (id: string) => void; positions: PortfolioPosition[]; onAddPosition: (position: Omit<PortfolioPosition, 'id'>) => void; onRemovePosition: (id: string) => void; communityPosts: CommunityPost[]; onCreatePost: (topic: string, message: string) => void; onLikePost: (id: string) => void; onReplyPost: (id: string, message: string) => void }) {
+  if (page === 'Mercado') return <MarketWorkspace assets={assets} watchlist={watchlist} onToggle={onToggle} onOpen={onOpenAsset} dataState={dataState} onRetry={onRetryMarket}/>
   if (page === 'Radar') return <RadarWorkspace assets={assets} onOpen={onOpenAsset}/>
   if (page === 'Notícias') return <NewsWorkspace/>
   if (page === 'Comunidade') return <CommunityWorkspace posts={communityPosts} onCreate={onCreatePost} onLike={onLikePost} onReply={onReplyPost}/>
@@ -293,20 +297,27 @@ function WorkspacePage({ page, assets, watchlist, onToggle, onOpenAsset, fearGre
   return <><PortfolioWorkspace assets={assets} positions={positions} onAdd={onAddPosition} onRemove={onRemovePosition}/><PortfolioDistribution assets={assets} positions={positions}/></>
 }
 
-function AssetDetailDialog({ asset, btcHistory, watchlist, onClose, onToggle }: { asset: MarketAsset; btcHistory: number[]; watchlist: string[]; onClose: () => void; onToggle: (symbol: string) => void }) {
+function AssetDetailDialog({ asset, watchlist, onClose, onToggle }: { asset: MarketAsset; watchlist: string[]; onClose: () => void; onToggle: (symbol: string) => void }) {
   const score = Math.round(Math.max(20, Math.min(95, 50 + asset.change * 8 + Math.log10(Math.max(asset.volume, 1)) * 1.4)))
-  const [history, setHistory] = useState<number[]>(asset.symbol === 'BTC' ? btcHistory : [])
+  const [detailPeriod, setDetailPeriod] = useState('1D')
+  const [history, setHistory] = useState<number[]>([])
+  const [historyState, setHistoryState] = useState<'loading' | 'ready' | 'unavailable'>('loading')
   useEffect(() => {
     let active = true
-    fetch(`https://api.binance.com/api/v3/klines?symbol=${asset.symbol}USDT&interval=1h&limit=24`)
+    const config = periodConfig[detailPeriod]
+    setHistoryState('loading')
+    fetch(`https://api.binance.com/api/v3/klines?symbol=${asset.symbol}USDT&interval=${config.interval}&limit=${config.limit}`)
       .then((response) => response.ok ? response.json() : Promise.reject(new Error('Histórico indisponível')))
-      .then((rows: Array<[number, string, string, string, string]>) => { if (active) setHistory(rows.map((row) => Number(row[4])).filter(Number.isFinite)) })
-      .catch(() => { if (active) setHistory([]) })
+      .then((rows: Array<[number, string, string, string, string]>) => { if (active) { setHistory(rows.map((row) => Number(row[4])).filter(Number.isFinite)); setHistoryState('ready') } })
+      .catch(() => { if (active) { setHistory([]); setHistoryState('unavailable') } })
     return () => { active = false }
-  }, [asset.symbol])
-  const chartHistory = asset.symbol === 'BTC' && btcHistory.length ? btcHistory : history
-  const hourChange = chartHistory.length > 1 && chartHistory[chartHistory.length - 2] ? (asset.price / chartHistory[chartHistory.length - 2] - 1) * 100 : null
-  return <div className="dialog-backdrop" role="presentation" onMouseDown={onClose}><section className="asset-dialog" role="dialog" aria-modal="true" aria-label={`Análise de ${asset.name}`} onMouseDown={(event) => event.stopPropagation()}><button className="dialog-close" onClick={onClose}>×</button><div className="asset-dialog-hero"><AssetMark symbol={asset.symbol} color={asset.color} size="lg"/><div><span>ATIVO EM PESQUISA</span><h2>{asset.name} <small>{asset.symbol}/USDT</small></h2></div><button className={watchlist.includes(asset.symbol) ? 'watch-toggle saved dialog-watch' : 'watch-toggle dialog-watch'} onClick={() => onToggle(asset.symbol)}><Icon name="bookmark" size={17}/> {watchlist.includes(asset.symbol) ? 'Na watchlist' : 'Adicionar à watchlist'}</button></div><div className="asset-detail-numbers"><div><span>PREÇO</span><b>{formatMoney(asset.price)}</b></div><div><span>VARIAÇÃO 1H</span><b className={hourChange === null || hourChange >= 0 ? 'up-text' : 'down-text'}>{hourChange === null ? '—' : `${hourChange >= 0 ? '+' : ''}${hourChange.toFixed(2)}%`}</b></div><div><span>VARIAÇÃO 24H</span><b className={asset.change >= 0 ? 'up-text' : 'down-text'}>{asset.change >= 0 ? '+' : ''}{asset.change.toFixed(2)}%</b></div><div><span>VOLUME 24H</span><b>{formatCompact(asset.volume)}</b></div><div><span>SCORE PARCIAL</span><b>{score}/100</b></div></div>{chartHistory.length ? <div className="asset-detail-chart"><PriceChart prices={chartHistory} price={asset.price} interval="24H" assetLabel={asset.name}/></div> : <div className="asset-history-pending"><Icon name="chart" size={22}/><p>Carregando a linha do tempo de preço público da Binance. Se a fonte estiver indisponível, esta seção não exibirá dados estimados.</p></div>}<div className="asset-research-grid"><article><span>POR QUE ACOMPANHAR</span><p>O ativo apresenta variação e volume mensuráveis no mercado spot. Use estes dados como ponto de partida, não como previsão.</p></article><article><span>PRINCIPAIS RISCOS</span><p>Preço e volume não cobrem fundamentos, liquidez em diferentes exchanges, desenvolvimento, tokenomics ou eventos regulatórios.</p></article></div><div className="external-links"><a href={`https://www.binance.com/en/trade/${asset.symbol}_USDT`} target="_blank" rel="noreferrer">Ver na Binance <Icon name="external" size={14}/></a><a href={`https://www.tradingview.com/symbols/${asset.symbol}USDT/?exchange=BINANCE`} target="_blank" rel="noreferrer">TradingView <Icon name="external" size={14}/></a><a href={`https://www.coingecko.com/en/search?query=${asset.name}`} target="_blank" rel="noreferrer">CoinGecko <Icon name="external" size={14}/></a></div></section></div>
+  }, [asset.symbol, detailPeriod])
+  useEffect(() => {
+    if (!asset.price) return
+    setHistory((current) => current.length ? [...current.slice(0, -1), asset.price] : current)
+  }, [asset.price])
+  const hourChange = history.length > 1 && history[history.length - 2] ? (asset.price / history[history.length - 2] - 1) * 100 : null
+  return <div className="dialog-backdrop" role="presentation" onMouseDown={onClose}><section className="asset-dialog" role="dialog" aria-modal="true" aria-label={`Análise de ${asset.name}`} onMouseDown={(event) => event.stopPropagation()}><button className="dialog-close" onClick={onClose} aria-label="Fechar detalhes">×</button><div className="asset-dialog-hero"><AssetMark symbol={asset.symbol} color={asset.color} size="lg"/><div><span>MERCADO SPOT · TEMPO REAL</span><h2>{asset.name} <small>{asset.symbol}/USDT</small></h2></div><button className={watchlist.includes(asset.symbol) ? 'watch-toggle saved dialog-watch' : 'watch-toggle dialog-watch'} onClick={() => onToggle(asset.symbol)}><Icon name="bookmark" size={17}/> {watchlist.includes(asset.symbol) ? 'Na watchlist' : 'Adicionar à watchlist'}</button></div><div className="asset-detail-numbers"><div><span>PREÇO</span><b>{formatMoney(asset.price)}</b></div><div><span>ÚLTIMO INTERVALO</span><b className={hourChange === null || hourChange >= 0 ? 'up-text' : 'down-text'}>{hourChange === null ? '—' : `${hourChange >= 0 ? '+' : ''}${hourChange.toFixed(2)}%`}</b></div><div><span>VARIAÇÃO 24H</span><b className={asset.change >= 0 ? 'up-text' : 'down-text'}>{asset.change >= 0 ? '+' : ''}{asset.change.toFixed(2)}%</b></div><div><span>VOLUME 24H</span><b>{formatCompact(asset.volume)}</b></div><div><span>SCORE PARCIAL</span><b>{score}/100</b></div></div><div className="detail-chart-toolbar"><div><b>Gráfico de preço</b><span>{periodConfig[detailPeriod].label} · Binance Spot</span></div><div className="periods" aria-label="Período do gráfico">{Object.keys(periodConfig).map((item) => <button key={item} className={detailPeriod === item ? 'selected' : ''} aria-pressed={detailPeriod === item} onClick={() => setDetailPeriod(item)}>{item}</button>)}</div></div>{historyState === 'ready' && history.length ? <div className="asset-detail-chart"><PriceChart prices={history} price={asset.price} interval={detailPeriod} assetLabel={asset.name}/></div> : <div className="asset-history-pending" role="status"><Icon name="chart" size={22}/><p>{historyState === 'loading' ? 'Carregando a linha do tempo pública deste ativo…' : 'O histórico deste ativo está temporariamente indisponível. Nenhum dado estimado será exibido.'}</p></div>}<div className="asset-research-grid"><article><span>LEITURA DO MERCADO</span><p>{asset.name} registra {asset.change >= 0 ? 'alta' : 'queda'} de {Math.abs(asset.change).toFixed(2)}% em 24h e volume de {formatCompact(asset.volume)} no par {asset.symbol}/USDT. Isso descreve o mercado, não prevê o próximo movimento.</p></article><article><span>ANTES DE INVESTIR</span><p>Compare fundamentos, liquidez em outras fontes, tokenomics, segurança, regulação e quanto uma perda afetaria sua carteira.</p></article></div><div className="external-links"><a href={`https://www.binance.com/en/trade/${asset.symbol}_USDT`} target="_blank" rel="noreferrer">Ver mercado de origem <Icon name="external" size={14}/></a><a href={`https://www.tradingview.com/symbols/${asset.symbol}USDT/?exchange=BINANCE`} target="_blank" rel="noreferrer">TradingView <Icon name="external" size={14}/></a><a href={`https://www.coingecko.com/en/search?query=${asset.name}`} target="_blank" rel="noreferrer">CoinGecko <Icon name="external" size={14}/></a></div></section></div>
 }
 
 function AiDialog({ assets, onClose }: { assets: MarketAsset[]; onClose: () => void }) {
@@ -328,17 +339,23 @@ function ConversationalAiDialog({ assets, alerts, positions, onClose, onNavigate
     const btc = available.find((asset) => asset.symbol === 'BTC') ?? available[0]
     const top = [...available].sort((a, b) => b.change - a.change)[0]
     const volume = [...available].sort((a, b) => b.volume - a.volume)[0]
+    const mentioned = available.find((asset) => text.includes(asset.symbol.toLowerCase()) || text.includes(asset.name.toLowerCase()))
     if (text.includes('carteira') || text.includes('posição') || text.includes('portfólio')) return { id: `${Date.now()}-a`, role: 'assistant', text: positions.length ? `Você tem ${positions.length} ${positions.length === 1 ? 'posição registrada' : 'posições registradas'} para acompanhamento. Eu usaria a tela Minha Carteira para separar preço médio, valor atual e exposição por ativo antes de tirar qualquer conclusão. Lembrete: o painel não inclui taxas, impostos ou saldo de exchange.` : 'Ainda não há posições registradas. Se quiser acompanhar uma exposição, você pode adicionar quantidade e preço médio em Minha Carteira; nada é conectado à sua exchange.', sources: ['Minha Carteira · dados informados por você'] }
     if (text.includes('alerta')) return { id: `${Date.now()}-a`, role: 'assistant', text: alerts.length ? `Há ${alerts.length} ${alerts.length === 1 ? 'alerta' : 'alertas'} salvo${alerts.length === 1 ? '' : 's'} neste navegador. Um alerta serve para chamar sua atenção quando uma condição acontece; ele não compra, vende ou envia ordem para nenhuma corretora.` : 'Você ainda não configurou alertas. Uma boa regra é definir um nível que mudaria sua pesquisa — e não apenas acompanhar qualquer oscilação diária.', sources: ['Alertas · armazenamento local'] }
     if (text.includes('volume') || text.includes('liquidez')) return { id: `${Date.now()}-a`, role: 'assistant', text: `Entre os ativos exibidos, ${volume.name} (${volume.symbol}) apresenta o maior volume observado: ${formatCompact(volume.volume)} em 24h. Volume indica atividade naquele par da Binance, mas não mede por si só qualidade do projeto nem garante que o movimento continuará. O próximo passo é abrir o Radar e comparar o ativo com o seu filtro de liquidez.`, sources: ['Binance Spot · volume 24h'] }
     if (text.includes('risco') || text.includes('seguro') || text.includes('comprar')) return { id: `${Date.now()}-a`, role: 'assistant', text: `Posso ajudar a estruturar a análise, mas não dizer se é hora de comprar. Para ${btc.name}, o painel mostra ${formatMoney(btc.price)} e ${btc.change >= 0 ? '+' : ''}${btc.change.toFixed(2)}% em 24h. O que ainda não está coberto aqui: notícias verificadas, fundamentos, tokenomics, liquidez fora da Binance, perfil de risco e seu horizonte. Antes de agir, vale checar esses pontos e definir o que invalidaria sua tese.`, sources: ['Binance Spot · preço e variação 24h'] }
+    if ((text.includes('compar') || text.includes('versus') || text.includes(' vs ')) && available.length > 1) {
+      const ordered = [...available].sort((a, b) => b.volume - a.volume).slice(0, 3)
+      return { id: `${Date.now()}-a`, role: 'assistant', text: `Comparação objetiva por volume observado: ${ordered.map((asset) => `${asset.symbol} ${formatCompact(asset.volume)} (${asset.change >= 0 ? '+' : ''}${asset.change.toFixed(2)}% em 24h)`).join('; ')}. Volume e variação ajudam a comparar atividade e momento, mas não substituem fundamentos, segurança, tokenomics e adequação ao seu risco.`, sources: ['Binance Spot · preço, variação e volume 24h'] }
+    }
+    if (mentioned) return { id: `${Date.now()}-a`, role: 'assistant', text: `${mentioned.name} (${mentioned.symbol}) está em ${formatMoney(mentioned.price)}, com ${mentioned.change >= 0 ? 'alta' : 'queda'} de ${Math.abs(mentioned.change).toFixed(2)}% e volume de ${formatCompact(mentioned.volume)} nas últimas 24h. Abra o ativo para explorar o gráfico por período. Antes de considerar um investimento, confira fundamentos, oferta do token, liquidez, segurança do protocolo e defina um limite de perda compatível com você.`, sources: [`Binance Spot · ${mentioned.symbol}/USDT`] }
     if (text.includes('btc') || text.includes('bitcoin')) return { id: `${Date.now()}-a`, role: 'assistant', text: `${btc.name} está em ${formatMoney(btc.price)}, com ${btc.change >= 0 ? '+' : ''}${btc.change.toFixed(2)}% nas últimas 24 horas e volume de ${formatCompact(btc.volume)} no par BTC/USDT. Isso descreve o momento observado, não explica a causa. Quer que eu ajude a listar as fontes que faltam para investigar o movimento?`, sources: ['Binance Spot · BTC/USDT'] }
     if (text.includes('comunidade') || text.includes('pessoas')) return { id: `${Date.now()}-a`, role: 'assistant', text: 'A Comunidade já permite publicar, curtir e responder dentro deste navegador. Para que outras pessoas vejam e participem, o próximo passo técnico é conectar autenticação, banco de dados e moderação — sem isso, não é seguro nem verdadeiro chamar de comunidade multiusuário.', sources: ['Comunidade CryptoLens · modo local'] }
     return { id: `${Date.now()}-a`, role: 'assistant', text: `${top.name} (${top.symbol}) é o ativo com maior variação entre os monitorados agora: ${top.change >= 0 ? '+' : ''}${top.change.toFixed(2)}% em 24h. Eu trataria isso como um convite à pesquisa, não como uma previsão. Posso seguir por três caminhos: comparar volume, mapear riscos que o painel ainda não cobre, ou organizar uma pergunta para a comunidade.`, sources: ['Binance Spot · ativos monitorados'] }
   }
   const ask = (value: string) => { const trimmed = value.trim(); if (!trimmed) return; setMessages((current) => [...current, { id: `${Date.now()}-u`, role: 'user', text: trimmed }, getReply(trimmed)]); setQuestion('') }
   const shortcuts = [{ label: 'Ler o volume', prompt: 'Quais ativos têm mais volume?' }, { label: 'Checar riscos', prompt: 'Quais riscos o painel ainda não cobre?' }, { label: 'Minha carteira', prompt: 'Como está minha carteira?' }, { label: 'Ir à comunidade', prompt: 'Como funciona a comunidade?' }]
-  return <div className="dialog-backdrop" role="presentation" onMouseDown={onClose}><section className="ai-dialog conversational-ai" role="dialog" aria-modal="true" aria-label="CryptoLens AI" onMouseDown={(event) => event.stopPropagation()}><button className="dialog-close" onClick={onClose}>×</button><div className="ai-dialog-heading"><span className="ai-orb">✦</span><div><span>CRYPTOLENS AI · CONVERSA GUIADA</span><h2>Dados primeiro. Contexto sempre.</h2></div></div><p className="ai-disclosure">Eu respondo com os dados presentes no painel e deixo claro o que ainda não está conectado. Não sou consultoria financeira e não invento fontes.</p><div className="chat-log">{messages.map((message) => <article className={`chat-message ${message.role}`} key={message.id}><span>{message.role === 'assistant' ? '✦' : 'Você'}</span><div><p>{message.text}</p>{message.sources && <small>Fontes: {message.sources.join(' · ')}</small>}</div></article>)}</div><div className="ai-suggestions">{shortcuts.map((item) => <button key={item.label} onClick={() => { if (item.label === 'Ir à comunidade') { onNavigate('Comunidade'); onClose() } else ask(item.prompt) }}>{item.label}</button>)}</div><form onSubmit={(event) => { event.preventDefault(); ask(question) }}><input autoFocus value={question} onChange={(event) => setQuestion(event.target.value)} placeholder="Ex.: o que eu deveria investigar sobre BTC?"/><button className="primary-btn" type="submit">Enviar <Icon name="arrow" size={16}/></button></form></section></div>
+  return <div className="dialog-backdrop" role="presentation" onMouseDown={onClose}><section className="ai-dialog conversational-ai" role="dialog" aria-modal="true" aria-label="CryptoLens AI" onMouseDown={(event) => event.stopPropagation()}><button className="dialog-close" onClick={onClose} aria-label="Fechar assistente">×</button><div className="ai-dialog-heading"><span className="ai-orb">✦</span><div><span>CRYPTOLENS AI · ASSISTENTE DE PESQUISA</span><h2>Dados primeiro. Contexto sempre.</h2></div></div><p className="ai-disclosure">Eu comparo os dados ao vivo disponíveis, explico riscos e sugiro o que pesquisar. Não acesso sua corretora, não executo ordens e não substituo aconselhamento financeiro profissional.</p><div className="chat-log" aria-live="polite">{messages.map((message) => <article className={`chat-message ${message.role}`} key={message.id}><span>{message.role === 'assistant' ? '✦' : 'Você'}</span><div><p>{message.text}</p>{message.sources && <small>Fontes: {message.sources.join(' · ')}</small>}</div></article>)}</div><div className="ai-suggestions">{shortcuts.map((item) => <button key={item.label} onClick={() => { if (item.label === 'Ir à comunidade') { onNavigate('Comunidade'); onClose() } else ask(item.prompt) }}>{item.label}</button>)}</div><form onSubmit={(event) => { event.preventDefault(); ask(question) }}><input autoFocus value={question} onChange={(event) => setQuestion(event.target.value)} aria-label="Pergunta para o CryptoLens AI" placeholder="Ex.: compare BTC e ETH ou explique os riscos de SOL"/><button className="primary-btn" type="submit">Enviar <Icon name="arrow" size={16}/></button></form></section></div>
 }
 
 function CommandPalette({ assets, onOpenAsset, onNavigate, onClose }: { assets: MarketAsset[]; onOpenAsset: (asset: MarketAsset) => void; onNavigate: (page: NavItem) => void; onClose: () => void }) {
@@ -359,7 +376,8 @@ function OnboardingDialog({ onDone, onNavigate }: { onDone: () => void; onNaviga
 function App() {
   const [activeNav, setActiveNav] = useState<NavItem>(() => pageFromHash())
   const [assets, setAssets] = useState<MarketAsset[]>(fallbackAssets)
-  const [dataState, setDataState] = useState<'loading' | 'live' | 'unavailable'>('loading')
+  const [dataState, setDataState] = useState<'loading' | 'live' | 'unavailable' | 'offline'>(() => navigator.onLine ? 'loading' : 'offline')
+  const [streamState, setStreamState] = useState<'connecting' | 'live' | 'paused'>('connecting')
   const [watchlist, setWatchlist] = useState<string[]>(() => {
     try { return JSON.parse(localStorage.getItem('cryptolens-watchlist') || '["BTC", "ETH"]') } catch { return ['BTC', 'ETH'] }
   })
@@ -392,7 +410,7 @@ function App() {
 
   useEffect(() => {
     const route = `#/${routeByPage[activeNav]}`
-    if (window.location.hash !== route) window.history.pushState(null, '', route)
+    if (window.location.hash !== route) window.location.hash = route
   }, [activeNav])
 
   useEffect(() => {
@@ -404,25 +422,75 @@ function App() {
     return () => window.removeEventListener('keydown', handleShortcut)
   }, [])
 
-  useEffect(() => {
-    let active = true
+  const refreshMarket = useCallback(async () => {
+    if (!navigator.onLine) { setDataState('offline'); return }
+    setDataState('loading')
     const pairs = assetsMeta.map((asset) => `${asset.symbol}USDT`)
-    fetch(`https://api.binance.com/api/v3/ticker/24hr?symbols=${encodeURIComponent(JSON.stringify(pairs))}`)
-      .then((response) => {
-        if (!response.ok) throw new Error('Binance indisponível')
-        return response.json()
-      })
-      .then((rows: Array<{ symbol: string; lastPrice: string; priceChangePercent: string; quoteVolume: string }>) => {
-        if (!active) return
-        setAssets(assetsMeta.map((asset) => {
-          const row = rows.find((item) => item.symbol === `${asset.symbol}USDT`)
-          return { ...asset, price: Number(row?.lastPrice || 0), change: Number(row?.priceChangePercent || 0), volume: Number(row?.quoteVolume || 0) }
-        }))
-        setDataState('live')
-      })
-      .catch(() => { if (active) setDataState('unavailable') })
-    return () => { active = false }
+    try {
+      const response = await fetch(`https://api.binance.com/api/v3/ticker/24hr?symbols=${encodeURIComponent(JSON.stringify(pairs))}`)
+      if (!response.ok) throw new Error('Binance indisponível')
+      const rows = await response.json() as Array<{ symbol: string; lastPrice: string; priceChangePercent: string; quoteVolume: string }>
+      setAssets(assetsMeta.map((asset) => {
+        const row = rows.find((item) => item.symbol === `${asset.symbol}USDT`)
+        return { ...asset, price: Number(row?.lastPrice || 0), change: Number(row?.priceChangePercent || 0), volume: Number(row?.quoteVolume || 0) }
+      }))
+      setDataState('live')
+    } catch { setDataState(navigator.onLine ? 'unavailable' : 'offline') }
   }, [])
+
+  useEffect(() => {
+    void refreshMarket()
+    const onOnline = () => { void refreshMarket() }
+    const onOffline = () => setDataState('offline')
+    window.addEventListener('online', onOnline)
+    window.addEventListener('offline', onOffline)
+    const interval = window.setInterval(() => { if (document.visibilityState === 'visible') void refreshMarket() }, 60_000)
+    return () => { window.removeEventListener('online', onOnline); window.removeEventListener('offline', onOffline); window.clearInterval(interval) }
+  }, [refreshMarket])
+
+  useEffect(() => {
+    let socket: WebSocket | null = null
+    let reconnectTimer = 0
+    let disposed = false
+    const streams = assetsMeta.map((asset) => `${asset.symbol.toLowerCase()}usdt@ticker`).join('/')
+    const connect = () => {
+      if (disposed || !navigator.onLine || document.visibilityState !== 'visible') { setStreamState('paused'); return }
+      setStreamState('connecting')
+      socket = new WebSocket(`wss://stream.binance.com:9443/stream?streams=${streams}`)
+      socket.onopen = () => setStreamState('live')
+      socket.onmessage = (event) => {
+        try {
+          const payload = JSON.parse(event.data) as { data?: { s?: string; c?: string; P?: string; q?: string } }
+          const ticker = payload.data
+          if (!ticker?.s) return
+          setAssets((current) => current.map((asset) => ticker.s === `${asset.symbol}USDT` ? { ...asset, price: Number(ticker.c), change: Number(ticker.P), volume: Number(ticker.q) } : asset))
+          setDataState('live')
+        } catch { /* aguarda o próximo evento válido */ }
+      }
+      socket.onclose = () => {
+        if (!disposed && navigator.onLine && document.visibilityState === 'visible') {
+          setStreamState('connecting')
+          reconnectTimer = window.setTimeout(connect, 5000)
+        }
+      }
+      socket.onerror = () => socket?.close()
+    }
+    const handleVisibility = () => {
+      window.clearTimeout(reconnectTimer)
+      socket?.close()
+      if (document.visibilityState === 'visible') connect()
+      else setStreamState('paused')
+    }
+    connect()
+    document.addEventListener('visibilitychange', handleVisibility)
+    return () => { disposed = true; window.clearTimeout(reconnectTimer); document.removeEventListener('visibilitychange', handleVisibility); socket?.close() }
+  }, [])
+
+  const liveBtcPrice = assets[0]?.price ?? 0
+  useEffect(() => {
+    if (!btcHistory.length || !liveBtcPrice) return
+    setBtcHistory((current) => [...current.slice(0, -1), liveBtcPrice])
+  }, [liveBtcPrice, btcHistory.length])
 
   useEffect(() => {
     let active = true
@@ -540,7 +608,7 @@ function App() {
         })}
       </nav>
       <div className="sidebar-bottom">
-        <button className="assistant-launch" onClick={() => setAiOpen(true)}><span className="ai-orb">✦</span><span><b>CryptoLens AI</b><small>Seu analista de dados</small></span><Icon name="chevron" size={15}/></button>
+        <button className="assistant-launch" onClick={() => setAiOpen(true)}><span className="ai-orb">✦</span><span><b>CryptoLens AI</b><small>Assistente de pesquisa</small></span><Icon name="chevron" size={15}/></button>
         <div className="disclaimer-mini"><span>i</span> Ferramenta informativa.<br/>Não constitui recomendação.</div>
       </div>
     </aside>
@@ -550,7 +618,7 @@ function App() {
         <div className="mobile-brand"><span className="brand-mark"><i/><i/><i/></span>Crypto<span>Lens</span></div>
         <div className="breadcrumb"><span>Visão geral</span><b>/</b><strong>{activeNav}</strong></div>
         <div className="top-actions">
-          <div className="market-online"><i/> Mercado online</div>
+          <div className={`market-online ${dataState !== 'live' ? 'muted' : ''}`} aria-live="polite"><i/>{dataState === 'live' ? streamState === 'live' ? 'Preços em tempo real' : 'Mercado online' : dataState === 'loading' ? 'Atualizando mercado' : dataState === 'offline' ? 'Sem conexão' : 'Mercado indisponível'}</div>
           <div className="search-wrap"><Icon name="search" size={17}/><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar ativo" aria-label="Buscar ativo"/>{query && <div className="search-results">{matches.length ? matches.map((asset) => <button key={asset.symbol} onClick={() => { setQuery(''); openAsset(asset) }}><AssetMark symbol={asset.symbol} color={asset.color} size="sm"/>{asset.name}<span>{asset.symbol}</span></button>) : <p>Nenhum ativo encontrado</p>}</div>}</div>
           <button className="round-action" aria-label="Configurações" onClick={() => showSoon('Configurações')}><Icon name="settings" size={18}/></button>
           <button className="profile" onClick={() => showSoon('Perfil')}><span>AM</span><i/></button>
@@ -598,15 +666,15 @@ function App() {
         <article className="ai-card"><div className="ai-card-backdrop"/><div className="ai-card-content"><div className="ai-label"><span className="ai-orb">✦</span> CRYPTOLENS AI</div><h2>Entenda o sinal.<br/><em>Não apenas o preço.</em></h2><p>Pergunte sobre movimentos, riscos e projetos — a IA explica com base nos dados e nas fontes disponíveis.</p><div className="ai-prompts"><button onClick={() => setAiOpen(true)}>Por que o volume de SOL aumentou? <Icon name="arrow" size={14}/></button><button onClick={() => setAiOpen(true)}>Quais são os riscos do BTC agora? <Icon name="arrow" size={14}/></button></div></div><button className="ask-ai" onClick={() => setAiOpen(true)}>Abrir assistente <Icon name="arrow" size={16}/></button></article>
         <article className="news-panel panel"><div className="section-heading"><div><div className="eyebrow compact"><span/> CONTEXTO VERIFICADO</div><h2>Crypto News</h2></div><button className="text-link" onClick={() => setActiveNav('Notícias')}>Abrir notícias <Icon name="arrow" size={15}/></button></div><div className="news-empty"><span className="news-empty-icon"><Icon name="news" size={22}/></span><div><b>Feed de notícias aguardando uma fonte conectada</b><p>O CryptoLens só exibirá manchetes quando título, fonte, horário e link original puderem ser verificados. Nenhuma notícia é inventada.</p><button onClick={() => showSoon('Integração de notícias')}>Configurar fonte <Icon name="arrow" size={14}/></button></div></div></article>
       </section>
-      </> : <WorkspacePage page={activeNav} assets={assets} watchlist={watchlist} onToggle={toggleWatchlist} onOpenAsset={openAsset} fearGreed={fearGreed} marketOverview={marketOverview} onOpenAI={() => setAiOpen(true)} alerts={alerts} onAddAlert={addAlert} onRemoveAlert={(id) => setAlerts((current) => current.filter((item) => item.id !== id))} positions={positions} onAddPosition={addPosition} onRemovePosition={(id) => setPositions((current) => current.filter((item) => item.id !== id))} communityPosts={communityPosts} onCreatePost={addCommunityPost} onLikePost={toggleCommunityLike} onReplyPost={addCommunityReply}/>} 
+      </> : <WorkspacePage page={activeNav} assets={assets} watchlist={watchlist} onToggle={toggleWatchlist} onOpenAsset={openAsset} dataState={dataState} onRetryMarket={() => void refreshMarket()} fearGreed={fearGreed} marketOverview={marketOverview} onOpenAI={() => setAiOpen(true)} alerts={alerts} onAddAlert={addAlert} onRemoveAlert={(id) => setAlerts((current) => current.filter((item) => item.id !== id))} positions={positions} onAddPosition={addPosition} onRemovePosition={(id) => setPositions((current) => current.filter((item) => item.id !== id))} communityPosts={communityPosts} onCreatePost={addCommunityPost} onLikePost={toggleCommunityLike} onReplyPost={addCommunityReply}/>}
       <footer><span>© 2026 CryptoLens</span><span>See the market. Understand the signal.</span><span>Dados públicos · Não é aconselhamento financeiro</span></footer>
     </main>
     <nav className="mobile-nav">{navItems.slice(0, 4).map((item) => { const icon: Record<string, string> = { Dashboard: 'grid', Mercado: 'chart', Radar: 'radar', Notícias: 'news', Watchlist: 'bookmark' }; return <button key={item} className={activeNav === item ? 'active' : ''} onClick={() => { setActiveNav(item); window.scrollTo({ top: 0, behavior: 'smooth' }) }}><Icon name={icon[item]}/><span>{item === 'Dashboard' ? 'Início' : item}</span></button> })}<button className={mobileMenuOpen || navItems.slice(4).includes(activeNav) ? 'active' : ''} onClick={() => setMobileMenuOpen(true)}><Icon name="more"/><span>Mais</span></button></nav>
     {mobileMenuOpen && <div className="mobile-menu-backdrop" onMouseDown={() => setMobileMenuOpen(false)}><div className="mobile-menu" onMouseDown={(event) => event.stopPropagation()}><div><span>MAIS ÁREAS</span><button onClick={() => setMobileMenuOpen(false)}>×</button></div>{navItems.slice(4).map((item) => { const icons: Record<NavItem, string> = { Dashboard: 'grid', Mercado: 'chart', Radar: 'radar', Notícias: 'news', Comunidade: 'users', Watchlist: 'bookmark', Análises: 'pulse', Alertas: 'bell', 'Minha Carteira': 'wallet' }; return <button key={item} onClick={() => { setActiveNav(item); setMobileMenuOpen(false); window.scrollTo({ top: 0, behavior: 'smooth' }) }}><Icon name={icons[item]}/><span>{item}</span>{item === 'Alertas' && alerts.length > 0 && <em>{alerts.length}</em>}<Icon name="chevron" size={16}/></button> })}</div></div>}
-    {selectedAsset && <AssetDetailDialog asset={selectedAsset} btcHistory={btcHistory} watchlist={watchlist} onClose={() => setSelectedAsset(null)} onToggle={toggleWatchlist}/>} 
-    {aiOpen && <ConversationalAiDialog assets={assets} alerts={alerts} positions={positions} onClose={() => setAiOpen(false)} onNavigate={setActiveNav}/>} 
-    {commandOpen && <CommandPalette assets={assets} onOpenAsset={openAsset} onNavigate={setActiveNav} onClose={() => setCommandOpen(false)}/>} 
-    {onboardingOpen && <OnboardingDialog onDone={finishOnboarding} onNavigate={setActiveNav}/>} 
+    {selectedAsset && <AssetDetailDialog asset={assets.find((asset) => asset.symbol === selectedAsset.symbol) ?? selectedAsset} watchlist={watchlist} onClose={() => setSelectedAsset(null)} onToggle={toggleWatchlist}/>}
+    {aiOpen && <ConversationalAiDialog assets={assets} alerts={alerts} positions={positions} onClose={() => setAiOpen(false)} onNavigate={setActiveNav}/>}
+    {commandOpen && <CommandPalette assets={assets} onOpenAsset={openAsset} onNavigate={setActiveNav} onClose={() => setCommandOpen(false)}/>}
+    {onboardingOpen && <OnboardingDialog onDone={finishOnboarding} onNavigate={setActiveNav}/>}
     {notice && <div className="toast"><span>✓</span>{notice}</div>}
   </div>
 }
