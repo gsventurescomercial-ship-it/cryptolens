@@ -15,6 +15,22 @@ pnpm dev
 pnpm build
 ```
 
+## Dados e privacidade
+
+- Preços, volume e histórico usam endpoints públicos da Binance Spot. O painel
+  atualiza os preços no máximo uma vez por minuto enquanto a aba está visível.
+- Indicadores globais usam CoinGecko e Alternative.me; tendências usam
+  CoinGecko. Se uma fonte estiver indisponível ou o navegador estiver offline,
+  o site mostra o estado correspondente e não substitui dados ausentes por
+  valores estimados.
+- Watchlist, alertas, carteira e conversas deste protótipo são armazenados
+  somente no `localStorage` do navegador. Não há envio desses dados a um
+  servidor.
+- Notícias verificáveis, comunidade multiusuário, notificações em segundo
+  plano e integração com corretoras dependem de backend, autenticação e fontes
+  licenciadas. Nenhuma chave, token ou credencial deve ser adicionada ao site
+  estático.
+
 ## Publicação
 
 O GitHub é a fonte de verdade do projeto. Atualizações enviadas para a branch
