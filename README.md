@@ -1,61 +1,70 @@
 # CryptoLens
 
-Painel de inteligência e acompanhamento de criptomoedas.
+Painel de acompanhamento de portfólio cripto VIEW-ONLY com dados da Binance, Supabase e IA educativa.
+
+## Stack fixa
+
+- JavaScript
+- Next.js 14 com App Router
+- Vercel
+- Supabase Auth + Postgres + RLS
+- lightweight-charts
+- Binance REST + WebSocket
+- Anthropic SDK somente no backend (`app/api`)
+- web-push
+- Resend
 
 ## Desenvolvimento
 
 ```bash
-pnpm install
-pnpm dev
+npm install
+cp .env.example .env.local
+npm run dev
 ```
 
-## Verificação
+Para validar produção:
 
 ```bash
-pnpm build
+npm run build
 ```
 
-## Arquitetura
+## Estrutura principal
 
-O GitHub é a fonte de verdade do código. O frontend permanece uma aplicação Vite/React e o backend usa Supabase para autenticação, banco PostgreSQL, RLS, análise por IA e processamento de alertas.
+```text
+app/
+  dashboard/page.js
+  alertas/page.js
+  login/page.js
+  api/ai-analise/route.js
+  api/alertas-cron/route.js
+  api/push/route.js
+components/
+  GraficoPreco.jsx
+  CardPortfolio.jsx
+  ChatIA.jsx
+lib/
+  supabaseClient.js
+  binance.js
+```
 
-### Banco de dados
+## Segurança e privacidade
 
-A migration em `supabase/migrations/20260910020000_cryptolens_backend.sql` cria e protege:
+O CryptoLens não é uma wallet custodial. Nenhuma chave privada ou fundo é armazenado, e posições são informadas manualmente pelo usuário. O frontend usa somente as credenciais públicas do Supabase, enquanto as chaves da Anthropic, Resend, web-push e operações administrativas permanecem exclusivamente no servidor.
 
-- `users`, vinculada a `auth.users`;
-- `portfolio_holdings` para posições informadas manualmente;
-- `alerts` para condições de preço e variação;
-- `notifications` para notificações de alerta e do app;
-- `ai_suggestions` para armazenar o contexto e a resposta das análises.
+A rota `app/api/ai-analise/route.js` exige sessão Supabase válida, monta o prompt no backend, chama a Anthropic e salva a análise em `ai_suggestions`. Qualquer sugestão de compra, venda ou rebalanceamento é educativa e não representa recomendação formal de investimento.
 
-Todas as tabelas usam Row Level Security. Cada usuário acessa apenas os próprios registros. O CryptoLens não é uma wallet custodial e não armazena chaves privadas nem fundos.
+## Banco e alertas
 
-### Alertas em segundo plano
+As tabelas de portfólio e alertas usam RLS para limitar cada usuário aos próprios dados. O job Supabase `cryptolens-price-alerts` continua ativo no banco para processar alertas mesmo com o app fechado. A rota Next.js `app/api/alertas-cron/route.js` também está preparada para processamento server-side e envio por Resend/web-push quando as credenciais operacionais forem configuradas.
 
-A migration instala um job `pg_cron` que executa `public.process_active_price_alerts()` a cada 5 minutos. O job consulta o ticker público da Binance no backend, marca alertas atingidos como `triggered` e cria uma notificação `in_app`. Assim, a verificação não depende da aba do navegador estar aberta.
+## Variáveis de ambiente
 
-### Análise com IA
+Use `.env.example` como referência e nunca faça commit de valores reais. Para o frontend funcionar em produção, configure `NEXT_PUBLIC_SUPABASE_URL` e `NEXT_PUBLIC_SUPABASE_ANON_KEY` na Vercel. Para IA, configure `ANTHROPIC_API_KEY`. Push/e-mail e a rota administrativa de cron exigem as demais variáveis server-only listadas no arquivo.
 
-A Edge Function `supabase/functions/analyze-portfolio/index.ts`:
+## Auth
 
-- exige um JWT válido do Supabase;
-- recebe `portfolio_json`, `market_context`, `risk_profile` e `user_question`;
-- monta o prompt exclusivamente no backend;
-- usa apenas o contexto de mercado recebido e não inventa preço ou notícia;
-- nunca executa ordens, compras ou vendas;
-- salva a análise em `ai_suggestions` respeitando RLS.
+E-mail/senha está implementado com Supabase Auth. Login Google usa `signInWithOAuth({ provider: 'google' })`; o provider Google também precisa estar habilitado no painel do Supabase com Client ID/Secret e a URL de callback autorizada.
 
-Configure `OPENAI_API_KEY` como secret da Edge Function. Opcionalmente use `OPENAI_MODEL`; sem ele, a função usa `gpt-5-mini`.
+## Deploy
 
-## Dados e privacidade
-
-- Preços, volume e histórico do painel usam endpoints públicos da Binance Spot.
-- Indicadores globais usam CoinGecko e Alternative.me.
-- A carteira é de acompanhamento: posições são lançadas manualmente pelo usuário.
-- Nenhuma integração com corretora executa operações.
-- Sugestões da IA são educativas e não substituem aconselhamento financeiro profissional.
-
-## Publicação
-
-Atualizações enviadas para a branch `main` continuam sendo compiladas e publicadas pelo fluxo existente do projeto.
+A branch `main` é a fonte de verdade. O projeto Vercel conectado ao GitHub faz deploy automático após merge/push na `main`.
