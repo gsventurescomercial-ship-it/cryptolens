@@ -35,6 +35,16 @@ Responda em português, de forma estruturada:
 4. Lembrete de que a decisão final e a execução são do usuário`;
 }
 
+function getPublicApiKey() {
+  try {
+    const keys = JSON.parse(Deno.env.get("SUPABASE_PUBLISHABLE_KEYS") || "{}");
+    if (keys.default) return String(keys.default);
+  } catch {
+    // fallback para projetos que ainda usam as chaves legadas
+  }
+  return Deno.env.get("SUPABASE_ANON_KEY") || "";
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") {
@@ -49,8 +59,10 @@ Deno.serve(async (req: Request) => {
     if (!authorization) throw new Error("Usuário não autenticado.");
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
-    const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+    const publicApiKey = getPublicApiKey();
+    if (!publicApiKey) throw new Error("Configuração pública do Supabase indisponível.");
+
+    const supabase = createClient(supabaseUrl, publicApiKey, {
       global: { headers: { Authorization: authorization } },
     });
 
@@ -72,7 +84,7 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    const model = Deno.env.get("OPENAI_MODEL") || "gpt-5-mini";
+    const model = Deno.env.get("OPENAI_MODEL") || "gpt-5.6-terra";
     const response = await fetch("https://api.openai.com/v1/responses", {
       method: "POST",
       headers: {
