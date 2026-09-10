@@ -1,23 +1,22 @@
 {
   "name": "cryptolens",
+  "version": "0.2.0",
   "private": true,
-  "version": "0.1.0",
-  "type": "module",
   "scripts": {
-    "dev": "node scripts/connect-supabase-frontend.mjs && vite",
-    "build": "node scripts/connect-supabase-frontend.mjs && tsc -b && vite build",
-    "preview": "vite preview"
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
   },
   "dependencies": {
-    "@supabase/supabase-js": "2.116.0",
-    "react": "latest",
-    "react-dom": "latest"
+    "@anthropic-ai/sdk": "^0.67.0",
+    "@supabase/supabase-js": "^2.57.4",
+    "lightweight-charts": "^4.2.3",
+    "next": "14.2.32",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "resend": "^6.1.2",
+    "web-push": "^3.6.7"
   },
-  "devDependencies": {
-    "@vitejs/plugin-react": "latest",
-    "@types/react": "latest",
-    "@types/react-dom": "latest",
-    "typescript": "latest",
-    "vite": "latest"
-  }
+  "packageManager": "npm@10.8.2"
 }
