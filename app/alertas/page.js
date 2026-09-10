@@ -11,12 +11,21 @@ function mapCondition(metric, direction) {
   return direction === 'above' ? 'price_above' : 'price_below'
 }
 
+function urlBase64ToUint8Array(base64String) {
+  const padding = '='.repeat((4 - (base64String.length % 4)) % 4)
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/')
+  const rawData = window.atob(base64)
+  return Uint8Array.from([...rawData].map((character) => character.charCodeAt(0)))
+}
+
 export default function AlertasPage() {
   const [user, setUser] = useState(null)
   const [alerts, setAlerts] = useState([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [removingId, setRemovingId] = useState('')
+  const [pushLoading, setPushLoading] = useState(false)
+  const [pushMessage, setPushMessage] = useState('')
   const [error, setError] = useState('')
   const [symbol, setSymbol] = useState('BTC')
   const [metric, setMetric] = useState('price')
@@ -58,14 +67,16 @@ export default function AlertasPage() {
       setUser(currentUser)
       loadAlerts(currentUser)
     })
-    const interval = window.setInterval(() => {
-      if (user) loadAlerts(user)
-    }, 60_000)
     return () => {
       mounted = false
       data.subscription.unsubscribe()
-      window.clearInterval(interval)
     }
+  }, [loadAlerts])
+
+  useEffect(() => {
+    if (!user) return
+    const interval = window.setInterval(() => loadAlerts(user), 60_000)
+    return () => window.clearInterval(interval)
   }, [loadAlerts, user])
 
   async function createAlert(event) {
@@ -85,13 +96,7 @@ export default function AlertasPage() {
       const client = requireSupabase()
       const { data, error: saveError } = await client
         .from('alerts')
-        .insert({
-          user_id: user.id,
-          symbol,
-          condition_type: mapCondition(metric, direction),
-          target_value: parsedTarget,
-          status: 'active',
-        })
+        .insert({ user_id: user.id, symbol, condition_type: mapCondition(metric, direction), target_value: parsedTarget, status: 'active' })
         .select('id,symbol,condition_type,target_value,status,triggered_at,created_at')
         .single()
       if (saveError) throw saveError
@@ -120,6 +125,50 @@ export default function AlertasPage() {
     }
   }
 
+  async function enablePush() {
+    setPushMessage('')
+    setError('')
+    if (!user) {
+      setError('Entre na sua conta para ativar notificações push.')
+      return
+    }
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+      setError('Este navegador não oferece suporte a notificações push web.')
+      return
+    }
+    setPushLoading(true)
+    try {
+      const permission = await Notification.requestPermission()
+      if (permission !== 'granted') throw new Error('Permissão de notificações não concedida.')
+
+      const keyResponse = await fetch('/api/push', { cache: 'no-store' })
+      const keyPayload = await keyResponse.json()
+      if (!keyResponse.ok) throw new Error(keyPayload.error || 'Chave pública de push indisponível.')
+
+      const registration = await navigator.serviceWorker.register('/sw.js')
+      const subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(keyPayload.publicKey),
+      })
+      const client = requireSupabase()
+      const { data: { session } } = await client.auth.getSession()
+      if (!session?.access_token) throw new Error('Sessão expirada. Entre novamente.')
+
+      const response = await fetch('/api/push', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify(subscription),
+      })
+      const payload = await response.json()
+      if (!response.ok) throw new Error(payload.error || 'Não foi possível salvar a assinatura push.')
+      setPushMessage('Notificações push ativadas neste dispositivo.')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Não foi possível ativar notificações push.')
+    } finally {
+      setPushLoading(false)
+    }
+  }
+
   return (
     <main className="app-shell">
       <header className="topbar">
@@ -133,7 +182,7 @@ export default function AlertasPage() {
       {!supabaseConfigured && <div className="async-state error">Configure as variáveis públicas do Supabase na Vercel para habilitar esta tela.</div>}
 
       <section className="panel">
-        <div className="panel-heading"><div><span className="eyebrow">NOVO ALERTA</span><h2>Defina a condição</h2></div><span className="secure-pill">Backend</span></div>
+        <div className="panel-heading"><div><span className="eyebrow">NOVO ALERTA</span><h2>Defina a condição</h2></div><button className="secondary-button" onClick={enablePush} disabled={pushLoading || !user}>{pushLoading ? 'Ativando…' : 'Ativar push'}</button></div>
         <form className="alert-form" onSubmit={createAlert}>
           <select value={symbol} onChange={(event) => setSymbol(event.target.value)} disabled={saving}>{SYMBOLS.map((item) => <option key={item}>{item}</option>)}</select>
           <select value={metric} onChange={(event) => setMetric(event.target.value)} disabled={saving}><option value="price">Preço</option><option value="change">Variação 24h</option></select>
@@ -141,11 +190,12 @@ export default function AlertasPage() {
           <input type="number" step="any" value={target} onChange={(event) => setTarget(event.target.value)} placeholder={metric === 'price' ? 'Valor em US$' : 'Percentual'} disabled={saving} />
           <button className="primary-button" disabled={saving || !user}>{saving ? 'Salvando…' : 'Criar alerta'}</button>
         </form>
+        {pushMessage && <div className="async-state success" role="status">{pushMessage}</div>}
         {error && <div className="async-state error" role="alert">{error}</div>}
       </section>
 
       <section className="panel">
-        <div className="panel-heading"><div><span className="eyebrow">SEUS ALERTAS</span><h2>Regras ativas e disparadas</h2></div></div>
+        <div className="panel-heading"><div><span className="eyebrow">SEUS ALERTAS</span><h2>Regras ativas e disparadas</h2></div><span className="secure-pill">Backend</span></div>
         {loading && <div className="async-state">Carregando alertas…</div>}
         {!loading && !user && <div className="empty-state">Entre na sua conta para visualizar e criar alertas.</div>}
         {!loading && user && alerts.length === 0 && <div className="empty-state">Nenhum alerta criado ainda.</div>}
