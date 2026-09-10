@@ -1,0 +1,36 @@
+name: Materialize Supabase frontend integration
+
+on:
+  push:
+    branches:
+      - fix/materialize-supabase-frontend
+    paths:
+      - .github/workflows/materialize-supabase-frontend.yml
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/materialize-supabase-frontend
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Apply permanent frontend patch
+        run: node scripts/connect-supabase-frontend.mjs
+      - name: Commit generated source
+        run: |
+          if git diff --quiet -- src/App.tsx; then
+            echo "No App.tsx changes needed"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/App.tsx
+          git commit -m "Persist Supabase frontend integration in App source"
+          git push origin HEAD:fix/materialize-supabase-frontend
