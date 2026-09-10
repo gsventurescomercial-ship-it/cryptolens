@@ -1,0 +1,43 @@
+name: Apply Supabase frontend integration v2
+
+on:
+  push:
+    branches:
+      - feature/supabase-ai-alerts
+    paths:
+      - .github/workflows/apply-supabase-frontend-v2.yml
+
+permissions:
+  contents: write
+
+jobs:
+  integrate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/supabase-ai-alerts
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Enable pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@10.17.1 --activate
+      - name: Apply source patch
+        run: python3 scripts/connect-supabase-frontend.py
+      - name: Refresh lockfile and validate build
+        run: |
+          pnpm install --lockfile-only --no-frozen-lockfile
+          pnpm install --frozen-lockfile
+          pnpm build
+      - name: Clean temporary files
+        run: rm -f vercel.json scripts/connect-supabase-frontend.py .github/workflows/apply-supabase-frontend.yml .github/workflows/apply-supabase-frontend-v2.yml
+      - name: Commit integrated frontend
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Connect frontend to Supabase and backend AI"
+          git push origin HEAD:feature/supabase-ai-alerts
